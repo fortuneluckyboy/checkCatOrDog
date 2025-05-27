@@ -4,19 +4,25 @@ from PIL import Image
 import torch
 from torchvision import transforms, models
 import os
-import shutil
 
-PASSWORD = "nekoinu123"  # あなたが設定したいパスワードに変更OK
-user_pw = st.text_input("パスワードを入力してください", type="password")
+# ===== 認証セクション =====
+PASSWORD = "nekoinu123"
 
-if user_pw != PASSWORD:
-    st.warning("正しいパスワードを入力してください。")
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+    user_pw = st.text_input("パスワードを入力してください", type="password")
+    if user_pw == PASSWORD:
+        st.session_state.logged_in = True
+        st.success("ログイン成功！")
+        st.rerun()  # 再描画してパスワード欄を非表示に
+    elif user_pw != "":
+        st.warning("正しいパスワードを入力してください。")
     st.stop()
 
-
-
 # クラス名（あなたのラベル順に合わせて）
-class_names = ['cat', 'dog']
+class_names = ['cats', 'dogs']
 
 # モデル読み込み
 model = models.resnet18(pretrained=False)
@@ -58,18 +64,32 @@ if uploaded_file:
     if feedback == "間違っている":
         correct_label = st.selectbox("正解のクラスは？", class_names)
         if st.button("記録する"):
-            # 保存先に分類してコピー（例: feedback_data/）
             save_path = f"my_dataset/train/{correct_label}/{uploaded_file.name}"
-            with open(save_path, "wb") as f:
-                f.write(uploaded_file.read())
-            st.success(f"正解として「{correct_label}」で記録しました ✅")
-            # ★ ここで再学習スクリプトを呼び出す
-            with st.spinner("再学習中..."):
-                result = subprocess.run(["python3", "train_model.py"], capture_output=True, text=True)
-                if result.returncode == 0:
-                    st.success("✅ 再学習が完了しました！")
-                else:
-                    st.error("❌ 再学習に失敗しました")
-                    st.text(result.stderr)
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+            try:
+                img = Image.open(uploaded_file).convert("RGB")
+                img.save(save_path, format="JPEG")  # 拡張子に関係なくJPEGで保存
+                st.success(f"正解として「{correct_label}」で記録しました ✅")
+
+                # 再学習
+                with st.spinner("再学習中..."):
+                    result = subprocess.run(["python3", "train-model.py"], capture_output=True, text=True)
+                    if result.returncode == 0:
+                        st.success("✅ 再学習が完了しました！")
+                    else:
+                        st.error("❌ 再学習に失敗しました")
+                        st.text(result.stderr)
+
+            except Exception as e:
+                st.error(f"画像の保存に失敗しました: {e}")
     else:
         st.info("正解と判定されたため記録しませんでした。")
+
+# ==== 再スタートボタン ====
+st.markdown("---")
+if st.button("🔄 最初からやり直す"):
+    for key in list(st.session_state.keys()):
+        if key != "logged_in":
+            del st.session_state[key]
+    st.rerun()
